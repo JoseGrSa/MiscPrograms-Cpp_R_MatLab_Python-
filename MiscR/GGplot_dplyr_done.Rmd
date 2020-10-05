@@ -1,0 +1,338 @@
+---
+title: "Introducción a ggplot2 y dplyr en R"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+Aprendamos un poco sobre data.frames, una de las estructuras más comunes en R y dos librerías, `dplyr` (manipulación de data.frames) y `ggplot2` (visualizaciones).]
+
+Cuando importamos `tidyverse` importamos varias librerías incluyendo `ggplot2` y `dplyr`. Además importamos la librería `nycflights13` la cual usaremos para hacer ejercicios. Recuerda que si no tienes alguno de esto paquetes instalados puedes correr `install.packages("<LIBRARY_NAME>")`.
+
+```{r}
+library(tidyverse)
+library(datasets)
+library(nycflights13)
+data(iris)
+```
+
+### Ggplot2
+
+ggplot usa un estructura básica para generar sus visualizaciones donde primero definimos los datos a través de un data.frame y luego agregamos distintas partes, tranformaciones, variables o separaciones a nuestro gráfico. La estructura es,
+
+```
+ggplot(data = <DATA>) + 
+   <GEOM_FUNCTION>(
+     mapping = aes(<MAPPINGS>),
+     stat = <STAT>, 
+     position = <POSITION>
+   ) +
+   <COORDINATE_FUNCTION> +
+   <FACET_FUNCTION>
+```
+
+Estas partes de manera muy resumida significan:
+
+1. `ggplot()`: construye la figura y define datos generales
+1. `geom`: es el tipo de visualización (scatter, línea, barras, etc) Dentro de este además tenemos
+  <ul>
+    <li>`mapping`: lo que conecta las variables a los elementos del gráfico,</li>
+    <li>`stat`: generar nuevas variables como contar.</li>
+    <li>`position`: arreglos a los gráficos `dodge`, `fill`, `jitter`, `stack` (revisar cheat sheet)</li>
+  </ul>
+1. `coordinate`: nos permite cambiar el tipo de ejes: ej, transposición, coordenadas polares, etc.
+1. `facet`: separar en varias subfiguras.
+
+Realmente, para crear un gráfico sencillo, solo necesitamos lo siguiente
+
+```
+ggplot(data = <DATA>) +
+  <GEOM_FUNC>(mapping = aes(<MAPPING>))
+```
+
+Las otras partes las podemos ignorar por ahora pero las veremos en un momento.
+
+Antes de empezar hagamos una visualización rápida y analicemos el resultado.
+```{r}
+ggplot(data = mpg) +
+  geom_point(mapping = aes(x = displ, y = hwy))
+```
+
+Lo primero que hicimos fue definir los datos a utilizar en la función `ggplot()`. Siempre necesitamos iniciar una visualización con esta función, en ella podemos definir cosas básicas del gráfico, en este caso, los datos que se van a utilizar para graficar. Hasta ahora no hemos creado ninguna visualización.
+
+Las visualizaciones como tal aparecen a la hora de agregar una función tipo `GEOM`. En este caso usamos `geom_point()` que nos sirve para hacer un scatter plot. Dentro de cada `geom` necesitamos definir un mapeo hacia los elementos del geom, que logramos con la función `aes()`. La cual amarra o "mappea" variables del data.frame a los elementos del gráfico. En el caso anterior lo hicimos solo con `x` y `y` pero podemos hacerlo también con una tercera variable para el color por ejemplo.
+
+```{r}
+ggplot(data = iris) +
+  geom_point(mapping = aes(x = Petal.Length, y = Sepal.Length, color = Species, shape = Species))
+```
+
+Otros atributos que se pueden agregar al mapping son: `shape`, `alpha`, `size`
+
+Estos atributos se pueden agregar fuera del mapping y entonces se aplicarán a cada punto por igual.
+
+```{r}
+ggplot(data = iris) +
+  geom_point(mapping = aes(x = Petal.Length, y = Petal.Width), color = 'blue')
+```
+
+
+Podemos también agregar condiciones para visualizar,
+
+```{r}
+ggplot(data = iris) +
+  geom_point(mapping = aes(x = Petal.Length, y = Sepal.Length, color = Petal.Length > 2.5))
+```
+
+### Facets
+
+Los Facets nos permiten separar de manera sencilla el gráfico hay muchos tipos de facets pero concentrémonos en dos, `facet_wrap()` y `facet_grid()`
+
+`facet_wrap()` solo necesita que definamos una variable con la cual separar los gráficos y hace el trabajo para nosotros, notarás que usamos el símbolo `~` para el primer argumento de la función. Por ahora solo necesitamos pensar en él como que le estamos indicando a la función que ella tendrá que cambiar en base a Species.
+
+```{r}
+ggplot(data = iris) +
+  geom_point(mapping = aes(x = Petal.Length, y = Sepal.Length)) +
+  facet_wrap(~ Species,nrow = 1)
+```
+
+`facet_grid()` nos permite elegir el eje de la separación.
+
+Veamos como podemos hacer la misma separación pero dividiendo por columnas,
+
+```{r}
+ggplot(data = iris) +
+  geom_point(mapping = aes(x = Petal.Length, y = Sepal.Length)) +
+  facet_grid(Species ~ .)
+```
+
+En general es buena idea separar un gráfico con base a variables categóricas, usemos otro dataset con más variables categóricas para visualizar esto,
+
+```{r}
+data(CO2)
+
+ggplot(data = CO2) +
+  geom_point(aes(x = conc, y = uptake, color = Plant),
+             position = 'jitter') +
+  facet_grid(Type ~ Treatment, labeller = label_both)
+```
+
+### Otros tipos de geoms
+
+Hasta ahora solo hemos utilizado `geom_point()` pero existen muchos otros, un ejemplo es `geom_smooth()` que dibuja una línea del promedio de un conjunto de puntos. En el siguiente ejemplo verás que los geoms funcionan de manera muy similar, en algunos casos puedes solo cambiar el nombre del geom y listo.
+
+```{r}
+ggplot(data = iris) +
+  geom_smooth(mapping = aes(x = Sepal.Length, y = Petal.Length))
+```
+
+También hay ciertos mappings que funcionan con geoms y en otros no tienen sentido, un ejemplo con smooth sería `group` o `linetype`. 
+
+Otra cosa interesante es que podemos agregar más de un geom en un plot, solo hay que sumarlo
+
+```{r}
+ggplot(data = iris) +
+  geom_smooth(mapping = aes(x = Sepal.Length, y = Petal.Length, group = Species, color = Species)) +
+  geom_point(mapping = aes(x = Sepal.Length, y = Petal.Length, color = Species))
+```
+
+Tal vez te percataste que es un poco repetitivo tener que definir `x` y `y` en el mapping the cada geom, eso es cierto y por eso podemos también definir mapeos que compartirán los geoms desde que llamamos a `ggplot()`,
+
+```{r}
+ggplot(data = iris, mapping = aes(x = Sepal.Length, y = Petal.Length, color = Species)) +
+  geom_smooth(aes(group = Species)) +
+  geom_point()
+```
+
+### Stats
+
+Algunos visualizaciones usan las variables presentes para generar nuevos datos como promedio, desviación estándar, mediana, conteo, entre otras de alguna variable. Los stats hacen precisamente eso
+
+Un ejemplo común de gráfico que usa stats son los gráficos de barras e histogramas. Un gráfico de barras se suele usar con variables categóricas.
+
+Nota que hay un línea de `geom` y otra de `stat` en general éstas son intercambiables y cambiarlas aquí produce el mismo resultado,
+
+```{r}
+ggplot(data = diamonds) +
+  geom_bar(mapping = aes(x = cut, fill = cut))
+  #stat_count(mapping = aes(x = cut, fill = cut))
+```
+
+```{r}
+ggplot(data = diamonds) +
+  geom_bar(mapping = aes(x = cut, fill = clarity))
+```
+
+Para variables continuas se puede usar el stat `bin` que separa la variable en segmentos. El geom histogram incluye el stat de bin en automático
+
+```{r}
+ggplot(data = iris) +
+  geom_histogram(mapping = aes(x = Petal.Length),
+                 binwidth = 0.5)
+```
+
+# dplyr
+
+La librería `dplyr` sirve para manejar data.frames, tenemos 3 métodos principales que revisar en este paquete,
+
+1. `filter()`: quitar instancias (filas) con base a valores
+1. `arrange()`: organizar según el valor
+1. `select()`: seleccionar columnas
+1. `mutate()/transmute()`: agregar nuevas columnas
+1. `summarise()/groupby()`: agrupar y encontrar valores de tendencia
+
+### filter()
+
+Como ya mencionamos con `filter()` podemos escoger solo algunos valores de un data.frame basados en el valor de alguna variable, usemos el dataset `flights`
+
+Antes de filtrar veamos los datos originales, Iris es un dataset muy famoso para ciencia de datos, tenemos 4 variables numéricas (longitud y ancho de Pétalos y Sépalos) y una categórica (la especie de la planta: setosa, virginica y versicolor)
+
+```{r}
+iris
+```
+
+Nota que tenemos 150 instancias.
+
+Ahora usemos la función, su forma básica es,
+
+`filter(<DATA>, <CRITERIA>)`
+
+```{r}
+(iris_g7 <- filter(iris, Sepal.Length > 7))
+```
+
+Ahora que filtramos para obtener sólo las instancias con Sepal.Length mayor a 7 y vemos que tenemos solo 12 instancias ahora. Podemos con comas añadir nuevas condiciones o juntarlas con operadores lógicos como `and` y `or`.
+
+Otra opción para filtrar es el comando `%in%` el cual usamos para encontrar todos los valores en un vector, en este caso lo utilizamos para encontrar los ejemplos de iris setosa o virginica.
+
+```{r}
+filter(iris, Species %in% c('setosa','virginica'))
+```
+
+#### Ejercicios Filter
+
+```{r}
+flights
+```
+
+### arrange()
+
+Podemos usar arrange para organizar por una variable.
+
+```{r}
+arrange(iris, Sepal.Length)
+```
+
+El default es orden ascendente pero podemos usar descendiente,
+
+```{r}
+arrange(iris, desc(Sepal.Length))
+```
+
+### select()
+
+Select es para seleccionar columnas en lugar de filas/instancias. Experimenta qué sucede cuando usas las líneas comentadas.
+
+```{r}
+select(iris, Petal.Length, Species)
+#select(iris, Petal.Length:Sepal.Length, Species)
+#select(iris, ends_with('Length'))
+#select(iris, starts_with('Petal'))
+```
+
+### mutate()
+
+Agregar nuevas columnas calculando valores desde columnas anteriores
+
+```{r}
+mutate(iris,
+       Sepal.Ratio = Sepal.Length/Sepal.Width,
+       Petal.Ratio = Petal.Length/Petal.Width)
+```
+
+Si solo quieres conservar las nuevas columnas puedes usar transmute
+
+```{r}
+transmute(iris,
+       Sepal.Ratio = Sepal.Length/Sepal.Width,
+       Petal.Ratio = Petal.Length/Petal.Width)
+```
+
+
+### summarise()
+
+Summarise es de las funciones más poderosas, en general la combinamos con un groupby para generar cosas más interesantes.
+
+```{r}
+by_species <- group_by(iris, Species)
+
+summarise(by_species,
+          count = n(),
+          Petal.Length.Mean = mean(Petal.Length),
+          Petal.Length.Standard_Deviation = sd(Petal.Length))
+```
+
+# Ejercicios
+
+Has lo que se pide para el dataset flights.
+
+1. Filtra los vuelos que ocurrieron en Halloween, y crea un gráfico de barras que muestre cuántos vuelos salieron por hora.
+
+```{r}
+(flights_hal <- filter(flights, month == 10,day == 31))
+ggplot(data = flights_hal) +
+  geom_bar(mapping = aes(x = dep_time, fill = dep_time))
+
+
+```
+
+
+2. Filtra todos los vuelos que salieron el día primero de Julio y Agosto y has un scatter plot con el tiempo de salida (dep_time) en el eje `x` y el retraso de llegada (arr_delay) en el eje `y`. Haz que cambie el color de los puntos en base al tiempo que el avión estuvo en el aire (air_time). 
+
+En este dataset, cada que un vuelo no salió se usó el valor `NA`. Aunque ggplot se deshace solo de los datos, vale la pena agregar `!is.na(<variable>)` a la lista de valores en filter para asegurarte que no regrese valores de `NA`.
+
+```{r}
+(flights_ag <- filter(flights, month == 7 | month == 8,day == 1, !is.na("NA")))
+
+ggplot(data = flights_ag) +
+  geom_point(mapping = aes(x = dep_time, y = arr_delay,color = air_time))
+
+
+```
+
+3. Filtra los vuelos que llegaron más de dos horas tarde (arr_delay) pero no salieron más de dos horas tarde (dep_delay) y luego enseña la tabla organizada por el retraso de llegada donde el primer valor es el que tiene mayor retraso. Que tu tabla solo contenga las variables de flight, carrier, arr_delay y dep_delay en ese orden.
+
+```{r}
+
+select(arrange(filter(flights, arr_delay > 200, dep_delay < 200), desc(arr_delay)), flight, carrier, arr_delay, dep_delay)
+
+
+
+
+```
+
+4. Filtra los vuelos que salieron al menos una hora tarde pero recuperaron al menos 30 minutos durante el vuelo y crea una nueva columna con el tiempo que recuperó el vuelo. Ahora preséntalo en una tabla donde por cada aerolínea diga en promedio cuánto recuperaron por vuelo, la desviación estándar.
+
+Si no quitas los `NA` entonces no podrás encontrar los valores que buscas
+
+```{r}
+
+flights_new <-filter(flights, dep_delay > 99, (dep_delay - arr_delay) > 29, !is.na('NA'))
+
+flights_new_2 <- mutate(flights_new,
+       Time_Recovered = dep_delay - arr_delay)
+
+flights_new_3 <- select(flights_new_2,carrier,Time_Recovered)
+
+flights_new_4 <- arrange(flights_new_3,desc(carrier))
+
+by_flight <- group_by(flights_new_4, carrier)
+
+summarise(by_flight,
+number_of_flights = n(),
+Time_Recovered.Mean = mean(Time_Recovered),
+Time_Recovered.Standard_Deviation = sd(Time_Recovered))
+
+```
+

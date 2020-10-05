@@ -1,0 +1,304 @@
+---
+title: 'Actividad 4: Análisis de Expresión Diferencial en R'
+output:
+  html_document:
+    df_print: paged
+---
+
+## 1. Introducción
+
+Para esta actividad, vamos a llevar a cabo un anális de expresión diferencial en R usando principalmente la librería `limma`.
+
+Lo primero que necesitamos hacer es instalar las librerías necesarias.
+
+```{r}
+# install.packages("BiocManager")
+# library(BiocManager)
+# BiocManager::install("edgeR")
+```
+
+Ya que se hayan instalado podemos importar las librería `edgeR` y `limma`
+
+```{r}
+library(edgeR)
+library(limma)
+```
+
+## 2. ¿Qué es el Análisis de Expresión Diferencial?
+
+Cuando llevamos a cabo un estudio en biología puede interesarnos saber cuáles son los genes presentes en distintos grupos que someto a mi experimento.
+
+Por ejemplo, si hago un estudio para una enfermedad y analizo a 50 personas sanas y 50 personas enfermas entonces me gustaría encontrar qué genes comparten las personas enfermas que no se encuentran en las personas sanas y viceversa.
+
+Para esto, tenemos el análisis de expresión diferencial (AED) donde a través de técnicas computacionales encontramos relaciones dentro de listas de miles de genes expresados en los sujetos de mi experimento. Idealmente, si llevo a cabo esto de manera existosa, terminaré con un número manejable de genes a explorar y con los cuales trabajar para poder solucionar mi problema.
+
+## 3. Los Datos a Utilizar
+
+### La Matriz de Expresión
+
+Para esta actividad, vamos a usar el archivo `all_counts.txt` que puedes descargar en Canvas. Para cargar un archivo en `R` necesitamos definir nuestro `working directory`, (wd). Para hacer esto en RStudio puedes ir al menú, `Session/Set Working Directory` y escoger una de las opciones que se despliegan según sea tu caso.
+
+Yo puse el archivo en el mismo folder donde cree este archivo así que escogí `to source file location`. Lo importante es que el archivo `all_counts.txt` se encuentre en el directorio que escojas.
+
+Vamos a cargar estos datos a la variable `counts`, podemos hacer esto con la función `read.delim()` que sirve para leer archivos delimitados por tab como `all_counts.txt`. usamos el argumento `row.names = 1` para indicar a `R` que la primera columna contiene los nombres de cada fila, en otro caso, podría usar índices para cada fila. Lo cual podría ser deseable en otros casos.
+
+Después de cargar los datos imprimimos las dimensiones de los datos que cargamos, en un momento interpretaremos los resultados de ejecutar este comando.
+
+```{r}
+counts <- read.delim('all_counts.txt', row.names = 1)
+dim(counts)
+```
+
+A los datos que cargamos, le llamamos <strong>Matríz de Expresión</strong>. Como su nombre lo indica, esos datos consisten en una matriz cuyas filas representan un gen y cuyas columnas representan una muestra. 
+
+En nuestro caso, los datos que cargamos corresponden a un estudio para distintas plantas (cultivares) que fueron sometidas por distintos tiempos a un proceso (6 o 9 horas).
+
+Cuando cargamos la base de datos, encontramos que las dimensiones eran de 34,262 filas y 24 columnas. Esto significa que en nuestro experimento contamos con 24 muestras y 34,262 genes que se asociaron.
+
+Recuerda que con una muestra nos referimos a un individuo sobre el que hicimos el experimento, es decir, hicimos el experimento para 24 plantas.
+
+Estas muestras, aunque son 24, se dividen en 3 grupos principales:
+
+* C
+* I5
+* I8
+
+Y cada una de ellas a su vez puede tener el valor 6 o 9 asociado, lo que significa que fueron sometidas al proceso 6 o 9 horas.
+
+Imprimamos los nombres de las columnas para verificar esto,
+
+```{r}
+snames <- colnames(counts)
+```
+
+Como ya dijimos, cada muestra tiene el tipo de cultivar en su nombre (C, I5 o I8) seguido de las horas (6 o 9) y finalmente, tienen un número que las identifica una de la otra (a la primera C6 le ponemos un 1 a la segunda un 2 etc).
+
+### Features y Samples
+
+Sin embargo, la matriz de expresión no es el único dato que queremos conservar, existen otras dos listas que vale la pena utilizar para el AED. La primera es la lista de Features.
+
+##### Features
+La tabla de features contiene descripciones para los genes en nuestra base de datos. En la tabla de features tenemos tantas filas como la matriz de expresión ya que ambas corresponden a los genes. La idea es que en esta tabla podemos guardar información específica de cada gen. En algunas situaciones se carga una tabla de features desde que importamos los datos. En este caso no es así pero aún así mientras trabajemos en nuestros datos surgirán cosas que queramos guardar en esta lista.
+
+En `edgeR` a esta tabla se le llama `genes`
+
+##### Fenotipos
+La tabla de Fenotipos es similar en concepto a la de features pero en este caso para las muestras. La tabla de fenotipos va a tener una fila por cada muestra en mi estudio, por lo tanto en este caso, es una tabla con solo 24 filas. Cada una de esas filas la puedo usar para guardar información de la muestra, por ejemplo me convendría guardar el cultivar y horas en columnas de esta tabla.
+
+En `edgeR` a esta tabla se le llama `samples`
+
+##### DGELists
+
+`edgeR` tiene el objeto `DGEList` que guarda la matriz de expresión y las tablas de features y fenotipos. Por lo tanto utilizarlo nos facilitará el Análsis de Expresión Diferencial. lo único que tenemos que hacer es llamar a la función `DGEList` y dar como argumento nuestra matriz counts. La función en conjunto con otras funciones de `edgeR` sola se encargará de gestionar las listas necesarias.
+
+Es importante usar este tipo de dato porque las funciones de `edgeR` y `limma` están diseñadas para funcionar con él.
+
+```{r}
+d0 <- DGEList(counts)
+```
+
+## 4. Preprocesamiento de datos
+
+Ya que hemos cargado los datos y convertido al tipo `DGEList` podemos empezar a preprocesar los datos para nuestro análisis.
+
+### Normalización
+
+La normalización es un término que se suele usar en muchos lados y en general se refiere a llevar todo a un mismo sistema de referencia. Encontrar proporciones o porcentajes de un fenómeno es un buen ejemplo de esto. Si medimos cuántas personas han contraido una enfermedad y compramos los número de países grandes y pequeños directamente tendríamos un cesgo importante. Por ello es mejor primero normalizar a una escala igual (por ejemplo, enfermos por cada millón de habitantes) para poder comparar los datos.
+
+En este caso sucede lo mismo, puede ser que para una muestra, encontramos más genes por varias razones de los que encontramos en general para otra. Es por eso que usamos la función `calcNormFactors()` la función nos ayuda a calcular un factor que me dice como debo de normalizar mis datos para que sean comparables y lo hace a través de un método llamada Trimmed Mean of M-values. 
+
+No es importante entender como funciona este algoritmo pero lo que sí nos importa saber es que como `calcNormFactors()` es una función de `edgeR` entonces le podemos pasar nuestro `DGEList` y se va a encargar de guardar los datos necesarios en la lista de samples automáticamente.
+
+```{r}
+d0 <- calcNormFactors(d0)
+head(d0$samples)
+```
+
+La lista de samples ahora tiene 3 columnas, (group, lib.size y norm.factors) la últimas dos se crearon con `calcNormFactors()`. Un error que podemos notar ahorita es que se creó la columna `group` que nos podría servir para diferenciar las muestras por sus categorías, pero eso no ocurre ahora, así que arreglémoslo. 
+
+### Separar muestras por grupos
+
+Ya que los nombres de las columnas me dan información sobre los grupos que tengo, puedo usarlas para crear esta separación de grupos.
+
+La función `substr()` sirve para quedarnos con fragmentos de otro string anterior. Toma 3 argumentos, un string a cortar, el caracter donde queremos iniciar y el caracter donde queremos terminar, por ejemplo para el cultivar nos quedamos con el string que va del primer elemento hasta dos menos que la longitud total del string (ya que los dos últimos caracteres representan la hora y el índice).
+
+Hacemos algo similar para obtener el tiempo
+
+```{r}
+cultivar <- substr(snames, 1, nchar(snames) - 2) 
+time <- substr(snames, nchar(snames) - 1, nchar(snames) - 1)
+cultivar
+time
+```
+
+Vemos que ahora los vectores cultivar y time contienen por separado las características que queríamos extraer. Podemos usar la función `interaction` para crear las categorías que luego podemos pasar a nuesto `DGEList`
+
+```{r}
+group <- interaction(cultivar,time)
+
+d0$samples$group <- group
+```
+
+Ahora tenemos una separación entre 4 grupos, pero puede valer la pena agregar `cultivar` y `time` a la tabla de igual manera.
+
+```{r}
+d0$samples$cultivar <- factor(cultivar)
+d0$samples$time <- factor(time)
+```
+
+
+### Filtrar genes con baja expresión,
+
+Por último, para trabajar con un poco menos de datos, filtremos los genes con baja expresión. Es decir aquellos que casi no aparecen en el dataset. Específicamente los que aparecen menos de una vez por cada millon de genes encontrados. 
+
+El siguiente bloque de código aplica este filtro y guardamos los nuevos datos en la variable `d`. Al final volvemos a imprimir la dimensión de los datos y vemos que ahora tenemos 21,080 genes a comparación de antes donde teníamos 34,262
+
+```{r}
+cutoff <- 1
+drop <- which(apply(cpm(d0),1, max) < cutoff)
+
+d <- d0[-drop,]
+
+dim(d)
+```
+
+## 5. Visualización
+
+Ahora que hemos limpiado y preparado un poco nuestros datos, intentemos visualizarlos. `Limma` tiene algunas funciones especiales que nos ayudan a visualizar de manera más fácil.
+
+### Multidimensional Scaling Plot (MDS)
+
+Un MDS Plot toma un fenómeno de muchas variables y aplica ciertos procesos para reducir dimensionalidad. Eso significa que ahora podemos visualizar de manera sencilla un aproximado de las similitudes entre los genes de nuestros grupos
+
+La función `plotMDS` de `limma` hace eto muy fácil. Lo único que necesitamos hacer es pasarle nuestro `DGEList` y pasamos también el argumento `col` para separar por colores cada grupo.
+
+```{r}
+plotMDS(d, col = as.numeric(d0$samples$group))
+```
+
+¿Como harías para que ahora el color represente otra cosa, como el tiempo o el cultivar?
+
+```{r}
+plotMDS(d, col = as.numeric(d0$samples$cultivar))
+plotMDS(d, col = as.numeric(d0$samples$time))
+```
+
+Los gráficos que acabamos de crear nos pueden servir para darnos una idea de qué grupos nos gustaría contrastar en el siguiente paso.
+
+# 6. Encontrar Genes Diferencialmente Expresados
+
+Finalmente, para encontrar los genes diferencialmente expresados usamos modelos lineales de `limma`. El procedimiento que lleva a cabo la librería va más allá del material de esta clase pero lo importante es lo que podemos aprender al analizar los resultados.
+
+El procedimiento es el siguiente:
+
+1. Creamos un modelo que describe como se expresa cada gen dadas las muestras que tenemos.
+1. Ya que tenemos el modelo creado, especificamos los grupos que nos gustaría contrastar.
+1. Estimamos el contraste para cada gen.
+1. Imprimimos los genes con P value más pequeño (los que tenemos mayor confianza que realmente tienen diferentes expresiones)
+1. Encontrar el número estimado de genes diferencialmente expresados
+
+En el paso 2 podemos generar cambios escogiendo grupos distintos para contrastar. Ahí podemos escoger algún otro par de grupos para encontrar sus genes diferencialmente expresados
+
+##### Paso 1
+
+En este paso definimos el modelo. Este código no necesitamos cambiarlo
+
+```{r}
+mm <- model.matrix(~0 + group)
+y <- voom(d, mm, plot=FALSE)
+fit <- lmFit(y, mm)
+```
+
+En la variable `fit` se guarda el modelo que vamos a usar para encontrar genes diferencialmente expresados. imprimimos sus columnas para saber qué nombres necesitamos escribir cuando queramos encontrar contrastes entre diferentes grupos.
+
+```{r}
+colnames(fit)
+```
+
+
+##### Paso 2
+
+Aquí decidimos qué grupos contrastar, en este caso empezamos con I5.9 e I5.6. Esta parte del código es la que podemos editar más adelante para contrastar grupos distintos.
+
+```{r}
+contr <- makeContrasts(groupI5.9 - groupI5.6, levels = colnames(coef(fit)))
+```
+
+##### Paso 3
+
+Ahora corremos el modelo para los grupos que escogimos en el paso anterior.
+
+```{r}
+tmp <- contrasts.fit(fit, contr)
+tmp <- eBayes(tmp)
+```
+
+##### Paso 4
+Y visualizamos los 20 genes para los que más confianza tenemos que están diferencialmente expresados. ¿Cómo sabemos eso? Gracias al p-value. Esto se explica en la siguiente sección.
+
+```{r}
+top.table <- topTable(tmp, sort.by = "P", n = Inf)
+head(top.table, 20)
+```
+
+Las columnas de este data frame representan lo siguiente,
+
+* logFC: Fold Change, es decir I5.9/I5.6 para este gen (en escala logarítmica)
+* AveExpr: Expresión del gen en promedio para todos los grupos (en escala logarítmica)
+* t: logFC dividido entre el error estándar.
+* P.Val: p-value, valor para prueba de hipótesis, explicado en la sección siguiente.
+* adj.P.Val: P.Val ajustado de acuerdo a Benjamini-Hochberg false discovery rate (podemos ignorar esto)
+* B: probabilidad logarítmica que el gen está diferencialmente expresado. (también podemos ignorarlo, el p-value es un poco más util)
+
+##### Paso 5
+
+También gracias al p-value podemos encontrar un estimado de genes diferencialmente expresados. 
+
+```{r}
+length(which(top.table$adj.P.Val < 0.05))
+```
+##### Análisis
+El tipo de conclusiones que podemos sacar de esto incluyen:
+
+* El gen AT5G37260 tiene una expresión más alta en tiempo 9 que en 6 para el cultivar I5.
+* El gen AT2G29500 tiene una expresión más baja en tiempo 9 que en 6 para el cultivar I5.
+* Para el cultivar I5 estimamos que existen alrededor de 4680 genes diferencialmente expresados.
+
+# 7. Pruebas de Hipótesis
+
+Cuando generamos modelos estadísticos debemos considerar, dado que construimos nuestro modelo con solo un fragmento de la población, que nuestros resultados pueden estar reflejando ruido de nuestra muestra en lugar de la población.
+
+Para esto usamos las pruebas de hipótesis. En ellas, suponiendo una distribución normal, hacemos un estimado de la probabilidad de que nuestro resultado haya sido afectado por ruidos en los datos. 
+
+En base a eso, podemos definir un p-value que, entre menor sea, más seguros nos sentimos que los genes que encontramos son diferencialmente expresados. Se pueden definir diferentes límites para este p-value pero en este caso tomaremos 0.05. Es decir que para valores menores a 0.05 de p-value podemos concluir que los genes realmente son diferencialmente expresados.
+
+Esto está basado en el principio de que, si nuestra evidencia es muy fuerte a favor de la hipótesis de que un gen está diferencialmente expresado, entonces ni siquiera una gran cantidad de ruido en mi muestra cambiaría ese resultado.
+
+# 8. Actividad 4: ¿Qué tengo que hacer?
+
+Basado en el gráfico de la sección 5, escoge otros 3 pares de grupos y encuentra:
+
+1. Los 20 genes que más confianza tenemos que están diferencialmente expresados
+```{r}
+contr_2 <- makeContrasts(groupC.6 - groupI8.6 - groupI8.9, levels = colnames(coef(fit)))
+
+tmp_2 <- contrasts.fit(fit, contr_2)
+tmp_2 <- eBayes(tmp_2)
+
+top.table_2 <- topTable(tmp_2, sort.by = "P", n = Inf)
+head(top.table_2, 20)
+
+
+
+```
+1. Cuántos genes estimamos que están diferencialmente expresados?
+```{r}
+length(which(top.table_2$adj.P.Val < 0.05))
+
+```
+1. Para algunos de los genes diferencialmente expresados, búscalos en línea en las bases de datos estudiadas en clase y describelos.
+```{r}
+writeLines("Informacion buscada y basada en PubMed\n\nAT1G65930 = Es un gen que ayuda al proceso de respiracion de plantas, como un camino alternativo por el cual pueden respirar, lo cual explica su flexiblidad metabolica\n\nAT4G34110 = Es un gen proteina que interactua con una virus llamado turnip mosaic virus y tiene un rol importante en la infeccion\n\nAT3G08530 = Es una proteina que controla varias procesos de desarollo y procesos fisiologicos de una planta, como el reloj interno, y la respuesta al estres\n\nAT5G42080 = Es una proteina que tiene un rol muy importante en el ensamblaje de la placa celular y organizacion de microtubos\n\nAT4G35830 = Es un gen criticamente importante para la homeostasis de hierro en las plantas\n\n")
+```
+
+1. Tienes que entregar tu código en un script de R o Notebook de R y un reporte donde describas brevemente el procedimiento llevado a cabo y los resultados obtenidos para tus tres pares de grupos.
